@@ -299,18 +299,18 @@ class TrustAdaptiveFusionFT(nn.Module):
     def forward(self, v, r):
         # 特征提取
         rPPG_v = self.backbone_rgb(v)            # (B, T)
-        rPPG_r = self.backbone_rf(r)[0]  # (B, 1, T)
+        rPPG_r = self.backbone_rf(r)[0].squeeze(1)  # (B, 1, T)
 
         
         # output_v_si = self._fuse_frequency(rPPG_v.unsqueeze(-1), self.freq_conv_v)  # (B, T, 1)
         # output_r_si = self._fuse_frequency(rPPG_r.unsqueeze(-1), self.freq_conv_r)  # (B, T, 1)
-        psd_v, psd_r = compute_batch_psd(rPPG_v), compute_batch_psd(rPPG_r.squeeze(1)) # (B,  F)
+        psd_v, psd_r = compute_batch_psd(rPPG_v, zero_pad=0, Fs=30, low_pass=180, high_pass=40), compute_batch_psd(rPPG_r, zero_pad=0, Fs = 30, low_pass=180, high_pass=40) # (B,  F)
         f_freq_v, f_freq_r = self.freq_enc_v(psd_v.unsqueeze(1)), self.freq_enc_r(psd_r.unsqueeze(1))
 
         # 维度的设置
         
-        output_v = self.linear_v(rPPG_v.unsqueeze(1))     # (B, T, 4)
-        output_r = self.linear_r(rPPG_r)     # (B, T, 4)
+        output_v = self.linear_v(rPPG_v.unsqueeze(-1))     # (B, T, 4)
+        output_r = self.linear_r(rPPG_r.unsqueeze(-1))     # (B, T, 4)
 
         # 参数分解
         gamma_v, v_v, alpha_v, beta_v = self.get_parameters(*torch.split(output_v, 1, dim=-1))
@@ -318,8 +318,10 @@ class TrustAdaptiveFusionFT(nn.Module):
 
         
         # fusion features of every modality
-        output_v_si = self.TSF_r(rPPG_v.unsqueeze(1), f_freq_v)
-        output_r_si = self.TSF_v(rPPG_r, f_freq_r)
+
+        output_v_si = self.TSF_v(rPPG_v.unsqueeze(-1), f_freq_v.transpose(1, 2))[0]
+
+        output_r_si = self.TSF_r(rPPG_r.unsqueeze(-1), f_freq_r.transpose(1, 2))[0]
 
 
        
@@ -328,9 +330,13 @@ class TrustAdaptiveFusionFT(nn.Module):
         a_weights = F.softmax(torch.cat([score_v, score_r], -1), dim=-1)
 
         # 自适应融合
-        a_v, a_r = a_weights[:, 0], a_weights[:, 1]
+        a_v, a_r = a_weights[:,:, 0], a_weights[:, :, 1]
         
-        gamma = a_v*gamma_v + a_r*gamma_r
+        # print(a_weights.shape)
+        # print(a_v.shape, gamma_v.shape)
+        gamma = a_v*gamma_v.squeeze() + a_r*gamma_r.squeeze()
         return (rPPG_v, gamma_v, v_v, alpha_v, beta_v, 
                 rPPG_r, gamma_r, v_r, alpha_r, beta_r,
                 gamma)
+    
+

@@ -40,6 +40,7 @@ class TimeFreqInteraction(nn.Module):
         Returns:
         Ft_new: (B, T, d), Fs_new: (B, F, d)
         """
+        # print(Ft.shape, Fs.shape)
         B, T, d = Ft.shape
         _, F, _ = Fs.shape
 
